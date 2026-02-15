@@ -11,6 +11,12 @@
       "style": {
         "navigationStyle": "custom"
       }
+    },
+    {
+      "path": "pages/emo/detail",
+      "style": {
+        "navigationStyle": "custom"
+      }
     }
   ],
   "navigationStyle": "custom",

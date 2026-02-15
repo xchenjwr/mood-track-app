@@ -22,7 +22,7 @@
       >
         <template #body>
           <view class="emo-cell">
-            <view>{{ item.name }}</view>
+            <view @click="toEmoDetail(item.id)">{{ item.name }}</view>
             <view class="emo-cell-right" @click="toCreateRecord(item)">
               <up-badge
                 class="badge"
@@ -35,14 +35,14 @@
         </template>
       </up-card>
     </view>
-    <up-empty v-else class="no-data" mode="list"> </up-empty>
+    <up-empty v-else class="no-list-data" mode="list" />
     <!-- 操作情绪抽屉 -->
     <up-action-sheet
       :show="emoActionsShow"
       :actions="emoActions"
       @select="selectAction"
       @close="emoActionsShow = false"
-    ></up-action-sheet>
+    />
     <!-- 修改情绪弹窗 -->
     <EditEmoModal
       v-model:show="editEmoShow"
@@ -63,13 +63,7 @@ import EditEmoModal from "./components/edit-emo-modal.vue";
 
 const store = useEmoStore();
 const { deleteEmo } = store;
-const { emoArray } = storeToRefs(store);
-let emoList = computed(
-  () =>
-    emoArray?.value?.sort(
-      (x: EmoType, y: EmoType) => y?.record?.length - x?.record?.length,
-    ) || [],
-); // 情绪展示按照次数降序
+const { emoList } = storeToRefs(store);
 let selectedEmo = reactive<EmoType>({} as EmoType); // 长按选中的情绪
 let emoActionsShow = ref<boolean>(false); // 操作情绪抽屉显示状态
 const emoActions = [
@@ -87,7 +81,7 @@ let editEmoShow = ref<boolean>(false); // 编辑情绪弹窗显示状态
 // 增加情绪页
 function toAddEmo() {
   uni.navigateTo({
-    url: "/pages/emo/create/create",
+    url: "/pages/emo/create",
   });
 }
 
@@ -95,7 +89,7 @@ function toAddEmo() {
 function toCreateRecord(item?: EmoType) {
   const emoItem: EmoType = item || selectedEmo;
   uni.navigateTo({
-    url: `/pages/emo/create/create?id=${emoItem.id}&name=${emoItem.name}`,
+    url: `/pages/emo/create?id=${emoItem.id}`,
   });
 }
 
@@ -108,11 +102,15 @@ function opraEmo(item: EmoType) {
 // 情绪更多操作
 function selectAction(e: any) {
   const { value } = e;
-  if (value === 0) {
-    editEmoShow.value = true;
-  } else if (value === 1) {
-    // 删除情绪
-    delEmo();
+  switch (value) {
+    case 0:
+      editEmoShow.value = true;
+      break;
+    case 1:
+      delEmo();
+      break;
+    default:
+      break;
   }
 }
 
@@ -129,12 +127,12 @@ function delEmo() {
   });
 }
 
-// // 进入情绪详情页
-// function toEmoDetail(id: number) {
-//   uni.navigateTo({
-//     url: `/pages/emo/detail/detail?id=${id}`,
-//   });
-// }
+// 进入情绪详情页
+function toEmoDetail(id: number) {
+  uni.navigateTo({
+    url: `/pages/emo/detail?id=${id}`,
+  });
+}
 </script>
 
 <style lang="less">
@@ -151,9 +149,5 @@ function delEmo() {
       gap: 10px;
     }
   }
-}
-
-.no-data {
-  margin-top: 150px !important;
 }
 </style>

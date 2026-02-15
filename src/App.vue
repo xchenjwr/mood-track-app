@@ -18,4 +18,7 @@ page {
 .w-100 {
   width: 100%;
 }
+.no-list-data {
+  margin-top: 150px !important;
+}
 </style>

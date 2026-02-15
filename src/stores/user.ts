@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
-import { getId } from "@/utils/functions";
+import { getId } from "@/utils";
 import type { EmoType, Records } from "@/common/interfaces";
 
 export const useEmoStore = defineStore("emo", () => {
@@ -17,6 +17,14 @@ export const useEmoStore = defineStore("emo", () => {
   // 情绪ID数组， 自增ID需要
   let emoIdArray = computed(
     () => emoArray.value.map((item: EmoType) => item.id) || [],
+  );
+
+  // 按照记录数量排序的情绪列表
+  let emoList = computed(
+    () =>
+      emoArray.value.sort(
+        (x: EmoType, y: EmoType) => y.record.length - x.record.length,
+      ) || [],
   );
 
   // actions
@@ -122,18 +130,20 @@ export const useEmoStore = defineStore("emo", () => {
    * @return
    */
   function updateRecord(eid: number, rid: number, desc: string = "") {
-    const targetEmo = emoArray.value.find((item: EmoType) => item.id === eid);
-    if (!targetEmo) {
+    const targetEmoIndex = emoArray.value.findIndex(
+      (item: EmoType) => item.id === eid,
+    );
+    if (targetEmoIndex === -1) {
       return;
     }
-    let targetRecord = targetEmo.record.find(
+    let targetRecordIndex = emoArray.value[targetEmoIndex].record.findIndex(
       (item: Records) => item.id === rid,
     );
-    if (!targetRecord) {
+    if (targetRecordIndex === -1) {
       return;
     }
-    targetRecord = {
-      ...targetRecord,
+    emoArray.value[targetEmoIndex].record[targetRecordIndex] = {
+      ...emoArray.value[targetEmoIndex].record[targetRecordIndex],
       desc,
     };
     save();
@@ -146,19 +156,61 @@ export const useEmoStore = defineStore("emo", () => {
    * @return
    */
   function deleteRecord(eid: number, rid: number) {
+    const targetEmoIndex = emoArray.value.findIndex(
+      (item: EmoType) => item.id === eid,
+    );
+    if (targetEmoIndex === -1) {
+      return;
+    }
+    const targetRecordIndex = emoArray.value[targetEmoIndex].record.findIndex(
+      (item) => item.id === rid,
+    );
+    if (targetRecordIndex === -1) {
+      return;
+    }
+    emoArray.value[targetEmoIndex].record.splice(targetRecordIndex, 1);
+    save();
+  }
+
+  // 获取记录信息
+  function getRecord(eid: number, rid: number) {
     const targetEmo = emoArray.value.find((item: EmoType) => item.id === eid);
     if (!targetEmo) {
       return;
     }
-    const targetRecordIndex = targetEmo.record.findIndex(
-      (item) => item.id === rid,
+    return targetEmo.record.find((item: Records) => item.id === rid);
+  }
+
+  function transferRecord(eid: number, rid: number, targetEid: number) {
+    const sourceEmoIndex = emoArray.value.findIndex(
+      (item: EmoType) => item.id === eid,
     );
-    targetEmo.record.splice(targetRecordIndex, 1);
+    if (sourceEmoIndex === -1) {
+      return;
+    }
+    const recordIndex = emoArray.value[sourceEmoIndex].record.findIndex(
+      (item: Records) => item.id === rid,
+    );
+    if (recordIndex === -1) {
+      return;
+    }
+    let [record] = emoArray.value[sourceEmoIndex].record.splice(recordIndex, 1);
+    const targetEmoIndex = emoArray.value.findIndex(
+      (item: EmoType) => item.id === targetEid,
+    );
+    if (targetEmoIndex === -1) {
+      return;
+    }
+    record.id = getId(
+      emoArray.value[targetEmoIndex].record.map((item) => item.id),
+    );
+    emoArray.value[targetEmoIndex].record.push(record);
     save();
   }
 
   return {
     emoArray,
+    emoList,
     emoNameArray,
     importEmoData,
     getEmoInfo,
@@ -169,5 +221,7 @@ export const useEmoStore = defineStore("emo", () => {
     addRecord,
     updateRecord,
     deleteRecord,
+    getRecord,
+    transferRecord,
   };
 });

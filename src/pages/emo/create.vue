@@ -1,11 +1,7 @@
 <template>
   <view>
     <!-- 导航栏 -->
-    <up-navbar
-      :title="id ? '添加' + emoName + '记录' : '创建情绪'"
-      @left-click="goBack"
-      :placeholder="true"
-    ></up-navbar>
+    <up-navbar :title="getTitle" @left-click="goBack" :placeholder="true" />
     <view class="form">
       <up-form
         labelPosition="top"
@@ -13,7 +9,7 @@
         :rules="emoRules"
         ref="form"
       >
-        <up-form-item v-show="!id" label="情绪" prop="name">
+        <up-form-item v-if="!id" label="情绪" prop="name">
           <up-input
             v-model="emoData.name"
             placeholder="10字以内"
@@ -35,17 +31,23 @@
 </template>
 
 <script lang="ts" setup>
-import { reactive, ref } from "vue";
+import { reactive, ref, computed } from "vue";
 import { storeToRefs } from "pinia";
 import { onLoad } from "@dcloudio/uni-app";
 import { useEmoStore } from "@/stores/user";
 
+// 页面模式：0-编辑记录，1-添加记录，2-创建情绪
+const enum PageMode {
+  EditRecord = 0,
+  AddRecord = 1,
+  CreateEmo = 2,
+}
 const emoStore = useEmoStore();
-const { createEmo, addRecord } = emoStore;
+const { createEmo, getEmo, addRecord, getRecord, updateRecord } = emoStore;
 const { emoNameArray } = storeToRefs(emoStore);
 let emoData = reactive({ name: "", desc: "" });
 let id = ref(0);
-let emoName = ref(""); // 已有情绪
+let rid = ref(0);
 const form = ref(null);
 const emoRules = {
   name: [
@@ -60,37 +62,73 @@ const emoRules = {
     },
   ],
 };
+const pageMode = computed(() => {
+  if (id.value && rid.value) return PageMode.EditRecord;
+  if (id.value) return PageMode.AddRecord;
+  return PageMode.CreateEmo;
+});
+const getTitle = computed(() => {
+  switch (pageMode.value) {
+    case PageMode.EditRecord:
+      return `编辑${emoData.name}记录`;
+    case PageMode.AddRecord:
+      return `添加${emoData.name}记录`;
+    case PageMode.CreateEmo:
+      return "创建情绪";
+    default:
+      return "";
+  }
+});
 
 onLoad((option: any) => {
   id.value = Number(option.id) || 0;
-  emoName = option.name || "";
+  if (!id.value) {
+    return;
+  }
+  emoData.name = getEmo(id.value)?.name || "";
+  rid.value = Number(option.rid) || 0;
+  if (!rid.value) {
+    return;
+  }
+  const record = getRecord(id.value, rid.value);
+  if (record) {
+    emoData.desc = record.desc;
+  }
 });
 
 function goBack() {
-  uni.navigateTo({
-    url: "/pages/index/index",
-  });
+  uni.navigateBack();
 }
 
-function submit() {
-  if (id.value) {
-    addRecord(id.value, emoData.desc);
-    uni.navigateTo({
-      url: "/pages/index/index",
-    });
-  } else {
-    (form.value as any)
-      .validate()
-      .then((valid: Boolean) => {
-        if (valid) {
-          createEmo(emoData.name, emoData.desc);
-          uni.navigateTo({
-            url: "/pages/index/index",
-          });
-        }
-      })
-      .catch(() => {});
+function validateForm() {
+  if (!form.value) {
+    return Promise.resolve(false);
   }
+  return (form.value as any)
+    .validate()
+    .then((valid: boolean) => valid)
+    .catch((err) => false);
+}
+
+async function submit() {
+  const res = await validateForm();
+  if (!res) {
+    return;
+  }
+  switch (pageMode.value) {
+    case PageMode.EditRecord:
+      updateRecord(id.value, rid.value, emoData.desc);
+      break;
+    case PageMode.AddRecord:
+      addRecord(id.value, emoData.desc);
+      break;
+    case PageMode.CreateEmo:
+      createEmo(emoData.name, emoData.desc);
+      break;
+    default:
+      break;
+  }
+  uni.navigateBack();
 }
 </script>
 
