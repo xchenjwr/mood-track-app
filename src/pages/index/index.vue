@@ -130,7 +130,7 @@ function delEmo() {
 // 进入情绪详情页
 function toEmoDetail(id: number) {
   uni.navigateTo({
-    url: `/pages/emo/detail?id=${id}`,
+    url: `/pages/emo/detail/detail?id=${id}`,
   });
 }
 </script>

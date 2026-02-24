@@ -13,7 +13,7 @@
       }
     },
     {
-      "path": "pages/emo/detail",
+      "path": "pages/emo/detail/detail",
       "style": {
         "navigationStyle": "custom"
       }

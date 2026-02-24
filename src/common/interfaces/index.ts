@@ -2,7 +2,7 @@
  * desc 情绪描述
  * time 产生时间
  */
-interface Records {
+interface RecordType {
   id: number;
   desc: string;
   time: number;
@@ -16,7 +16,7 @@ interface Records {
 interface EmoType {
   id: number;
   name: string;
-  record: Array<Records>;
+  record: Array<RecordType>;
 }
 
-export type { Records, EmoType };
+export type { RecordType, EmoType };

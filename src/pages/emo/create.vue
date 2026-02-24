@@ -107,7 +107,7 @@ function validateForm() {
   return (form.value as any)
     .validate()
     .then((valid: boolean) => valid)
-    .catch((err) => false);
+    .catch(() => false);
 }
 
 async function submit() {

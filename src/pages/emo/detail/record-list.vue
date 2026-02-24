@@ -1,15 +1,7 @@
 <template>
   <view>
-    <!-- 导航栏 -->
-    <up-navbar
-      :title="emoData?.name"
-      left-icon="arrow-left"
-      @left-click="goBack"
-      :placeholder="true"
-    />
     <!-- 记录列表 -->
     <view v-if="records?.length" class="record">
-      <view class="record-total">共{{ records?.length }}条记录</view>
       <view class="record-list">
         <up-card
           class="record-card"
@@ -50,22 +42,29 @@
     />
   </view>
 </template>
-<script lang="ts" setup>
-import { ref, reactive, computed } from "vue";
+<script setup lang="ts">
+import { ref, reactive, computed, toRefs } from "vue";
 import { storeToRefs } from "pinia";
 import { cloneDeep } from "lodash";
 import { onLoad } from "@dcloudio/uni-app";
 import { useEmoStore } from "@/stores/user";
 import { smartFormatTime } from "@/utils";
+import type { EmoType, RecordType } from "@/common/interfaces";
+
+interface Props {
+  emoData: EmoType;
+}
+const props = defineProps<Props>();
+const { emoData } = toRefs(props); // 情绪详情数据
 
 const store = useEmoStore();
 const { emoList } = storeToRefs(store);
 const { getEmo, deleteRecord, transferRecord } = store;
-let emoData = reactive({}); // 情绪详情数据
 let records = computed(
   () =>
-    emoData.record?.sort((x: RecordType, y: RecordType) => y.time - x.time) ||
-    [],
+    emoData.value?.record?.sort(
+      (x: RecordType, y: RecordType) => y.time - x.time,
+    ) || [],
 ); // 记录按照时间降序
 let selectedRecord = reactive<RecordType>({} as RecordType); // 长按选中的记录
 let recordActionsShow = ref<boolean>(false); // 操作记录抽屉显示状态
@@ -86,26 +85,12 @@ const recordActions = [
 let transferShow = ref<boolean>(false); // 转移记录抽屉显示状态
 let emoColumns = computed(() => [
   emoList.value
-    .filter((item: EmoType) => item.id !== emoData.id)
+    .filter((item: EmoType) => item.id !== emoData.value?.id)
     .map((item: EmoType) => ({
       text: item.name,
       value: item.id,
     })),
 ]); // 情绪列表
-
-onLoad((option: any) => {
-  const id = Number(option.id) || 0;
-  if (id) {
-    emoData = getEmo(id);
-  }
-});
-
-// 返回主页
-function goBack() {
-  uni.navigateTo({
-    url: "/pages/index/index",
-  });
-}
 
 // 长按操作记录
 function opraRecord(item: RecordType) {
@@ -134,7 +119,7 @@ function selectAction(e: any) {
 // 编辑记录
 function editRecord() {
   uni.navigateTo({
-    url: `/pages/emo/create?id=${emoData.id}&rid=${selectedRecord.id}`,
+    url: `/pages/emo/create?id=${emoData.value.id}&rid=${selectedRecord.id}`,
   });
 }
 
@@ -143,10 +128,10 @@ function transferRecordToOther(e: any) {
   transferShow.value = false;
   uni.showModal({
     title: "转移确认",
-    content: `是否将该条记录从${emoData.name}转移到${e.value[0].text}?`,
+    content: `是否将该条记录从${emoData.value.name}转移到${e.value[0].text}?`,
     success: function (res) {
       if (res.confirm) {
-        transferRecord(emoData.id, selectedRecord.id, e.value[0].value);
+        transferRecord(emoData.value.id, selectedRecord.id, e.value[0].value);
       }
     },
   });
@@ -159,15 +144,16 @@ function delRecord() {
     content: "是否删除该条记录",
     success: function (res) {
       if (res.confirm) {
-        deleteRecord(emoData.id, selectedRecord.id);
+        deleteRecord(emoData.value.id, selectedRecord.id);
       }
     },
   });
 }
 </script>
+
 <style lang="less">
 .record {
-  padding: 15px;
+  padding: 0 10px;
   .record-total {
     color: grey;
   }

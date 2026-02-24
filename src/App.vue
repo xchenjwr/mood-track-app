@@ -21,4 +21,7 @@ page {
 .no-list-data {
   margin-top: 150px !important;
 }
+.pd-15 {
+  padding: 15px;
+}
 </style>
