@@ -8,9 +8,6 @@
       @right-click="toAddEmo"
       :placeholder="true"
     >
-      <template #left>
-        <ParseUploadData />
-      </template>
     </up-navbar>
     <!-- 情绪列表 -->
     <view v-if="emoList.length" class="emo-list">
@@ -49,6 +46,7 @@
       :id="selectedEmo.id"
       :name="selectedEmo.name"
     />
+    <CustomTabBar />
   </view>
 </template>
 
@@ -58,7 +56,7 @@ import { storeToRefs } from "pinia";
 import { cloneDeep } from "lodash";
 import { useEmoStore } from "@/stores/user";
 import type { EmoType } from "@/common/interfaces";
-import ParseUploadData from "./components/parse-upload-data.vue";
+import CustomTabBar from "@/common/components/custom-tab-bar.vue";
 import EditEmoModal from "./components/edit-emo-modal.vue";
 
 const store = useEmoStore();

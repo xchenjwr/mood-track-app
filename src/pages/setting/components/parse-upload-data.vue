@@ -1,6 +1,6 @@
 <template>
-  <view>
-    <text @click="renderJs.chooseFileInApp">导入</text>
+  <view @click="renderJs.chooseFileInApp">
+    <up-cell title="导入" :isLink="true"></up-cell>
   </view>
 </template>
 <script>
@@ -34,7 +34,7 @@ export default {
                   data: jsonData
                 })
             } catch (error) {
-                console.error("错误:", error);
+              uni.showToast({ title: "导入失败", icon: "none", duration: 3000 });
             }
         });
     }
