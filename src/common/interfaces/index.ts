@@ -19,4 +19,22 @@ interface EmoType {
   record: Array<RecordType>;
 }
 
-export type { RecordType, EmoType };
+/**
+ * 一个“对象/分组”（例如：个人、张三朋友）
+ */
+interface ProfileType {
+  id: number;
+  name: string;
+  emos: Array<EmoType>;
+}
+
+/**
+ * App 根数据（v2）
+ */
+interface AppDataV2 {
+  version: 2;
+  currentProfileId: number;
+  profiles: Array<ProfileType>;
+}
+
+export type { RecordType, EmoType, ProfileType, AppDataV2 };

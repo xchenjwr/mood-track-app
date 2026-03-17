@@ -14,8 +14,10 @@
 <script setup lang="ts">
 import CustomTabBar from "@/common/components/custom-tab-bar.vue";
 import ParseUploadData from "./components/parse-upload-data.vue";
+
 function downData() {
   const userInfo = uni.getStorageSync("userInfo");
+  // userInfo 可能是旧结构（数组）或新结构（对象），都允许导出
   saveJsonToAndroidDir(userInfo, "data.json");
 }
 

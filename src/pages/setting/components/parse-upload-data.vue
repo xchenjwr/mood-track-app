@@ -25,7 +25,7 @@ export default {
         fileInput.setAttribute("accept", ".json,application/json");
         fileInput.click();
         fileInput.addEventListener("change", async (e) => {
-            const file = event.target.files[0];
+            const file = e && e.target && e.target.files ? e.target.files[0] : null;
             if (!file) return;
             try {
                 const text = await file.text();

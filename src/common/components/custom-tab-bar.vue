@@ -6,6 +6,7 @@
     :placeholder="true"
   >
     <up-tabbar-item text="首页" icon="home"></up-tabbar-item>
+    <up-tabbar-item text="统计" icon="list"></up-tabbar-item>
     <up-tabbar-item text="设置" icon="setting"></up-tabbar-item>
   </up-tabbar>
 </template>
@@ -30,6 +31,11 @@ function changeTabbar(e) {
       });
       break;
     case 1:
+      uni.navigateTo({
+        url: "/pages/stats/stats",
+      });
+      break;
+    case 2:
       uni.navigateTo({
         url: "/pages/setting/setting",
       });

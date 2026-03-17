@@ -7,6 +7,18 @@
       }
     },
     {
+      "path": "pages/stats/stats",
+      "style": {
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/emo/list/list",
+      "style": {
+        "navigationStyle": "custom"
+      }
+    },
+    {
       "path": "pages/emo/create",
       "style": {
         "navigationStyle": "custom"
