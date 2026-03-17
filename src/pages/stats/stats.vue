@@ -97,7 +97,7 @@
       mode="range"
       :minDate="calendarMinDate"
       :maxDate="calendarMaxDate"
-      :monthNum="12"
+      :monthNum="calendarMonthNum"
       :maxRange="92"
       rangePrompt="选择天数不能超过 3 个月"
       :showRangePrompt="true"
@@ -129,6 +129,11 @@ const customRange = ref<{ start: string; end: string } | null>(null);
 
 const calendarMinDate = computed(() => dayjs().subtract(1, "year").format("YYYY-MM-DD"));
 const calendarMaxDate = computed(() => dayjs().format("YYYY-MM-DD"));
+const calendarMonthNum = computed(() => {
+  const min = dayjs(calendarMinDate.value).startOf("month");
+  const max = dayjs(calendarMaxDate.value).startOf("month");
+  return Math.max(1, max.diff(min, "month") + 1);
+});
 
 
 const profilePickerShow = ref(false);
@@ -148,6 +153,18 @@ let emoChart: any = null;
 const profileHiddenMap = ref<Record<string, boolean>>({});
 const emoHiddenMap = ref<Record<string, boolean>>({});
 
+const canvasSizeCache = new Map<string, { width: number; height: number }>();
+
+// Pre-aggregated index for fastest switching:
+// profileDayCounts[profileId][YYYY-MM-DD] => count of all records in that day
+// emoDayCounts[profileId][emoId][YYYY-MM-DD] => count of that emo records in that day
+// topEmoIdsByProfile[profileId] => top 5 emoIds by total count (within profile)
+let profileDayCounts = new Map<number, Map<string, number>>();
+let emoDayCounts = new Map<number, Map<number, Map<string, number>>>();
+let emoNameById = new Map<number, string>();
+let topEmoIdsByProfile = new Map<number, number[]>();
+let rebuildAggTimer: any = null;
+
 const palette = [
   "#3c9cff",
   "#f56c6c",
@@ -165,6 +182,89 @@ function calcNiceYAxis(maxVal: number, splitNumber: number = 5) {
   const max = Math.max(0, Number(maxVal) || 0);
   const step = Math.max(1, Math.ceil(max / splitNumber));
   return { min: 0, max: step * splitNumber, splitNumber };
+}
+
+function pad2(n: number) {
+  return n < 10 ? `0${n}` : `${n}`;
+}
+
+function msAtLocalStartOfDay(ms: number) {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+// Faster than dayjs for per-record day key
+function toYMDLocal(ms: number) {
+  const d = new Date(ms);
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  return `${y}-${pad2(m)}-${pad2(day)}`;
+}
+
+function ymdToMMDD(ymd: string) {
+  // YYYY-MM-DD -> MM-DD
+  return ymd.slice(5);
+}
+
+function bumpMapCount(map: Map<string, number>, key: string, delta: number = 1) {
+  map.set(key, (map.get(key) || 0) + delta);
+}
+
+function rebuildAggIndex() {
+  // Merge frequent mutations into a single rebuild
+  if (rebuildAggTimer) clearTimeout(rebuildAggTimer);
+  rebuildAggTimer = setTimeout(() => {
+    rebuildAggTimer = null;
+
+    const nextProfileDayCounts = new Map<number, Map<string, number>>();
+    const nextEmoDayCounts = new Map<number, Map<number, Map<string, number>>>();
+    const nextEmoNameById = new Map<number, string>();
+    const nextTopEmoIdsByProfile = new Map<number, number[]>();
+
+    const profiles = data.value?.profiles || [];
+    for (const p of profiles) {
+      const pDay = new Map<string, number>();
+      const emoMap = new Map<number, Map<string, number>>();
+      const emoTotals = new Map<number, number>();
+
+      for (const emo of p.emos || []) {
+        nextEmoNameById.set(emo.id, emo.name);
+
+        const eDay = new Map<string, number>();
+        let eTotal = 0;
+        for (const r of emo.record || []) {
+          const ms = (r.time || 0) * 1000;
+          if (!ms) continue;
+          const dayMs = msAtLocalStartOfDay(ms);
+          const key = toYMDLocal(dayMs);
+          bumpMapCount(pDay, key, 1);
+          bumpMapCount(eDay, key, 1);
+          eTotal += 1;
+        }
+        emoMap.set(emo.id, eDay);
+        emoTotals.set(emo.id, eTotal);
+      }
+
+      const topIds = [...emoTotals.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([id]) => id);
+
+      nextProfileDayCounts.set(p.id, pDay);
+      nextEmoDayCounts.set(p.id, emoMap);
+      nextTopEmoIdsByProfile.set(p.id, topIds);
+    }
+
+    profileDayCounts = nextProfileDayCounts;
+    emoDayCounts = nextEmoDayCounts;
+    emoNameById = nextEmoNameById;
+    topEmoIdsByProfile = nextTopEmoIdsByProfile;
+
+    // Data changed: refresh chart(s) with latest index
+    scheduleRerenderAll();
+  }, 0);
 }
 
 function setRange(key: RangeKey) {
@@ -187,6 +287,8 @@ function confirmCustomRange(e: any) {
   customRange.value = { start, end };
   rangeKey.value = "custom";
   customCalendarShow.value = false;
+  // 二次选择自定义时 rangeKey 可能不变（仍是 custom），这里强制刷新
+  scheduleRerenderAll();
 }
 
 function openProfilePicker() {
@@ -200,56 +302,40 @@ function confirmProfile(e: any) {
   selectedProfileId.value = Number(target.value);
 }
 
-function getBuckets(key: RangeKey) {
+function getDayBuckets(key: RangeKey) {
   // custom：最多 3 个月（由日历 maxRange 限制），按天聚合保持细粒度
   if (key === "custom" && customRange.value) {
     const start = dayjs(customRange.value.start).startOf("day");
     const end = dayjs(customRange.value.end).startOf("day");
     if (!start.isValid() || !end.isValid() || end.isBefore(start)) {
-      return getBuckets("week");
+      return getDayBuckets("week");
     }
-    const diffDays = end.diff(start, "day") + 1;
-    const arr: dayjs.Dayjs[] = [];
-    for (let i = 0; i < diffDays; i++) {
-      arr.push(start.add(i, "day"));
-    }
-    const categories = arr.map((d) => d.format("MM-DD"));
     const startMs = start.valueOf();
-    const bucketIndex = (ms: number) => {
-      const d = dayjs(ms).startOf("day");
-      return arr.findIndex((x) => x.isSame(d, "day"));
-    };
-    return { categories, startMs, bucketCount: categories.length, bucketIndex };
+    const endMs = end.valueOf();
+    const dayKeys: string[] = [];
+    for (let ms = startMs; ms <= endMs; ms += 24 * 60 * 60 * 1000) {
+      dayKeys.push(toYMDLocal(ms));
+    }
+    const categories = dayKeys.map(ymdToMMDD);
+    return { dayKeys, categories };
   }
 
-  const now = dayjs();
   const days = key === "week" ? 7 : key === "month" ? 30 : 90;
-  const arr: dayjs.Dayjs[] = [];
+  const todayMs = msAtLocalStartOfDay(Date.now());
+  const dayKeys: string[] = [];
   for (let i = days - 1; i >= 0; i--) {
-    arr.push(now.subtract(i, "day").startOf("day"));
+    dayKeys.push(toYMDLocal(todayMs - i * 24 * 60 * 60 * 1000));
   }
-  const categories = arr.map((d) => d.format("MM-DD"));
-  const startMs = arr[0].valueOf();
-  const bucketIndex = (ms: number) => {
-    const d = dayjs(ms).startOf("day");
-    return arr.findIndex((x) => x.isSame(d, "day"));
-  };
-  return { categories, startMs, bucketCount: categories.length, bucketIndex };
+  const categories = dayKeys.map(ymdToMMDD);
+  return { dayKeys, categories };
 }
 
 function calcProfileSeries(key: RangeKey) {
-  const { categories, startMs, bucketCount, bucketIndex } = getBuckets(key);
+  const { categories, dayKeys } = getDayBuckets(key);
   const series = profileList.value
     .map((p, idx) => {
-    const dataArr = new Array(bucketCount).fill(0);
-    (p.emos || []).forEach((emo) => {
-      (emo.record || []).forEach((r) => {
-        const ms = (r.time || 0) * 1000;
-        if (ms < startMs) return;
-        const idx = bucketIndex(ms);
-        if (idx >= 0) dataArr[idx] += 1;
-      });
-    });
+    const pDay = profileDayCounts.get(p.id) || new Map<string, number>();
+    const dataArr = dayKeys.map((k) => pDay.get(k) || 0);
     return {
       name: p.name,
       data: dataArr,
@@ -262,26 +348,20 @@ function calcProfileSeries(key: RangeKey) {
 }
 
 function calcEmoSeries(key: RangeKey, profile: ProfileType) {
-  const { categories, startMs, bucketCount, bucketIndex } = getBuckets(key);
-  const emos = [...(profile.emos || [])];
-  // Top 5 by total records (within profile)
-  emos.sort((a, b) => (b.record?.length || 0) - (a.record?.length || 0));
-  const top = emos.slice(0, 5);
+  const { categories, dayKeys } = getDayBuckets(key);
+  const topIds = topEmoIdsByProfile.get(profile.id) || [];
+  const pEmoMap = emoDayCounts.get(profile.id) || new Map<number, Map<string, number>>();
 
-  const series = top
-    .map((emo: EmoType, idx: number) => {
-    const dataArr = new Array(bucketCount).fill(0);
-    (emo.record || []).forEach((r) => {
-      const ms = (r.time || 0) * 1000;
-      if (ms < startMs) return;
-      const idx = bucketIndex(ms);
-      if (idx >= 0) dataArr[idx] += 1;
-    });
+  const series = topIds
+    .map((emoId: number, idx: number) => {
+    const eDay = pEmoMap.get(emoId) || new Map<string, number>();
+    const dataArr = dayKeys.map((k) => eDay.get(k) || 0);
+    const name = emoNameById.get(emoId) || `情绪${emoId}`;
     return {
-      name: emo.name,
+      name,
       data: dataArr,
       color: palette[idx % palette.length],
-      hidden: !!emoHiddenMap.value[emo.name],
+      hidden: !!emoHiddenMap.value[name],
     };
   })
     .filter((s) => !s.hidden);
@@ -299,27 +379,30 @@ const profileLegendItems = computed(() => {
 const emoLegendItems = computed(() => {
   const p = selectedProfile.value || profileList.value[0];
   if (!p) return [];
-  const emos = [...(p.emos || [])];
-  emos.sort((a, b) => (b.record?.length || 0) - (a.record?.length || 0));
-  const top = emos.slice(0, 5);
-  return top.map((emo, idx) => ({
-    name: emo.name,
+  const topIds = topEmoIdsByProfile.get(p.id) || [];
+  return topIds.map((emoId, idx) => {
+    const name = emoNameById.get(emoId) || `情绪${emoId}`;
+    return {
+      name,
     color: palette[idx % palette.length],
-    hidden: !!emoHiddenMap.value[emo.name],
-  }));
+      hidden: !!emoHiddenMap.value[name],
+    };
+  });
 });
 
 function toggleProfileLegend(name: string) {
   profileHiddenMap.value = { ...profileHiddenMap.value, [name]: !profileHiddenMap.value[name] };
-  rerenderAll();
+  nextTick().then(() => renderProfileChart());
 }
 
 function toggleEmoLegend(name: string) {
   emoHiddenMap.value = { ...emoHiddenMap.value, [name]: !emoHiddenMap.value[name] };
-  rerenderAll();
+  nextTick().then(() => renderEmoChart());
 }
 
 function getCanvasSize(canvasId: string): Promise<{ width: number; height: number }> {
+  const cached = canvasSizeCache.get(canvasId);
+  if (cached) return Promise.resolve(cached);
   return new Promise((resolve) => {
     const sys = uni.getSystemInfoSync();
     const fallback = {
@@ -330,10 +413,12 @@ function getCanvasSize(canvasId: string): Promise<{ width: number; height: numbe
       .createSelectorQuery()
       .select(`#${canvasId}`)
       .boundingClientRect((rect: any) => {
-        resolve({
+        const size = {
           width: rect?.width || fallback.width,
           height: rect?.height || fallback.height,
-        });
+        };
+        canvasSizeCache.set(canvasId, size);
+        resolve(size);
       })
       .exec();
   });
@@ -346,6 +431,28 @@ async function renderProfileChart() {
   const niceY = calcNiceYAxis(maxVal, 5);
   const { width, height } = await getCanvasSize("profileLine");
   const pixelRatio = uni.getSystemInfoSync().pixelRatio || 1;
+  if (profileChart && typeof profileChart.updateData === "function") {
+    profileChart.updateData({
+      categories,
+      series,
+      animation: false,
+      yAxis: {
+        min: niceY.min,
+        max: niceY.max,
+        splitNumber: niceY.splitNumber,
+        data: [
+          {
+            fontSize: 6,
+            min: niceY.min,
+            max: niceY.max,
+            splitNumber: niceY.splitNumber,
+            toFixed: 0,
+          },
+        ],
+      },
+    });
+    return;
+  }
   profileChart = new uCharts({
     type: "line",
     context: uni.createCanvasContext("profileLine"),
@@ -354,7 +461,7 @@ async function renderProfileChart() {
     categories,
     series,
     fontSize: 8,
-    animation: true,
+    animation: false,
     background: "#FFFFFF",
     pixelRatio,
     xAxis: {
@@ -397,6 +504,28 @@ async function renderEmoChart() {
   const niceY = calcNiceYAxis(maxVal, 5);
   const { width, height } = await getCanvasSize("emoLine");
   const pixelRatio = uni.getSystemInfoSync().pixelRatio || 1;
+  if (emoChart && typeof emoChart.updateData === "function") {
+    emoChart.updateData({
+      categories,
+      series,
+      animation: false,
+      yAxis: {
+        min: niceY.min,
+        max: niceY.max,
+        splitNumber: niceY.splitNumber,
+        data: [
+          {
+            fontSize: 6,
+            min: niceY.min,
+            max: niceY.max,
+            splitNumber: niceY.splitNumber,
+            toFixed: 0,
+          },
+        ],
+      },
+    });
+    return;
+  }
   emoChart = new uCharts({
     type: "line",
     context: uni.createCanvasContext("emoLine"),
@@ -405,7 +534,7 @@ async function renderEmoChart() {
     categories,
     series,
     fontSize: 8,
-    animation: true,
+    animation: false,
     background: "#FFFFFF",
     pixelRatio,
     xAxis: {
@@ -440,10 +569,25 @@ async function renderEmoChart() {
 
 async function rerenderAll() {
   await nextTick();
-  profileChart = null;
-  emoChart = null;
   await renderProfileChart();
   await renderEmoChart();
+}
+
+let scheduleAllTimer: any = null;
+let scheduleEmoTimer: any = null;
+function scheduleRerenderAll() {
+  if (scheduleAllTimer) clearTimeout(scheduleAllTimer);
+  scheduleAllTimer = setTimeout(() => {
+    scheduleAllTimer = null;
+    rerenderAll();
+  }, 0);
+}
+function scheduleRenderEmoOnly() {
+  if (scheduleEmoTimer) clearTimeout(scheduleEmoTimer);
+  scheduleEmoTimer = setTimeout(() => {
+    scheduleEmoTimer = null;
+    nextTick().then(() => renderEmoChart());
+  }, 0);
 }
 
 onMounted(async () => {
@@ -451,14 +595,40 @@ onMounted(async () => {
   if (!selectedProfileId.value && profileList.value[0]) {
     selectedProfileId.value = profileList.value[0].id;
   }
+  rebuildAggIndex();
   await rerenderAll();
 });
 
 watch(
-  () => [rangeKey.value, selectedProfileId.value, profileList.value.length],
+  () => [rangeKey.value, profileList.value.length],
   async () => {
-    await rerenderAll();
+    // 切换时间范围：两张图都更新
+    scheduleRerenderAll();
   },
+);
+
+watch(
+  () => (customRange.value ? `${customRange.value.start}|${customRange.value.end}` : ""),
+  () => {
+    // 二次/多次修改自定义时间：只要范围变了就刷新（当前在 custom 模式才需要）
+    if (rangeKey.value === "custom") scheduleRerenderAll();
+  },
+);
+
+watch(
+  () => selectedProfileId.value,
+  async () => {
+    // 仅切换对象：只更新下面图表（单对象）
+    scheduleRenderEmoOnly();
+  },
+);
+
+watch(
+  () => data.value?.profiles,
+  () => {
+    rebuildAggIndex();
+  },
+  { deep: true },
 );
 </script>
 
