@@ -35,6 +35,12 @@
       "style": {
         "navigationStyle": "custom"
       }
+    },
+    {
+      "path": "pages/profile/detail/detail",
+      "style": {
+        "navigationStyle": "custom"
+      }
     }
   ],
   "navigationStyle": "custom",

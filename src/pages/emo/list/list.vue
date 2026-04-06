@@ -5,16 +5,27 @@
       :title="navTitle"
       left-icon="arrow-left"
       @left-click="goBack"
-      right-icon="plus-circle"
-      @right-click="toAddEmo"
       :placeholder="true"
     />
 
     <!-- Tabs标签 -->
-    <up-tabs v-model="activeTab" :list="tabs" @change="handleTabChange" />
+    <up-tabs v-model="activeTab" :current="activeTab" :list="tabs" @change="handleTabChange" />
+
+    <!-- 简介tab -->
+    <view v-if="activeTab === 0" class="desc-tab">
+      <view class="desc-card">
+        <view class="desc-card-body">
+          <text v-if="profileDescription" class="desc-text">{{ profileDescription }}</text>
+          <text v-else class="desc-empty">暂无简介信息，点击右侧图标添加</text>
+        </view>
+        <view class="desc-card-edit" @tap.stop="openEditDesc">
+          <up-icon name="edit-pen" size="18" color="#999"></up-icon>
+        </view>
+      </view>
+    </view>
 
     <!-- 列表tab -->
-    <view v-if="activeTab === 0">
+    <view v-if="activeTab === 1">
       <!-- 情绪列表 -->
       <view v-if="emoList.length" class="emo-list">
         <up-card
@@ -42,7 +53,7 @@
     </view>
 
     <!-- 统计tab -->
-    <view v-if="activeTab === 1" class="stats-tab">
+    <view v-if="activeTab === 2" class="stats-tab">
       <view class="range">
         <up-button
           size="small"
@@ -109,6 +120,25 @@
         @close="customCalendarShow = false"
       />
     </view>
+
+    <!-- 编辑简介弹窗 -->
+    <up-modal
+      :show="editDescShow"
+      title="编辑简介"
+      showCancelButton
+      @confirm="saveDescription"
+      @cancel="editDescShow = false"
+    >
+      <view class="desc-edit-wrap">
+        <up-textarea
+          v-model="description"
+          placeholder="请输入对象简介（100字以内）"
+          maxlength="100"
+          count
+          :height="120"
+        />
+      </view>
+    </up-modal>
   </view>
 </template>
 
@@ -124,6 +154,7 @@ import { useEmoStore } from "@/stores/user";
 
 const store = useEmoStore();
 const { emoList, currentProfileName, profileList, data, currentProfile } = storeToRefs(store);
+const { updateProfileDescription } = store;
 
 const navTitle = computed(() => {
   const n = currentProfileName.value || "";
@@ -131,8 +162,25 @@ const navTitle = computed(() => {
 });
 
 // Tabs相关
-const activeTab = ref(0);
-const tabs = [{ name: "列表" }, { name: "统计" }];
+const activeTab = ref(1);
+const tabs = [{ name: "简介" }, { name: "列表" }, { name: "统计" }];
+
+// 简介相关
+const description = ref("");
+const editDescShow = ref(false);
+const profileDescription = computed(() => currentProfile.value?.description || "");
+
+function openEditDesc() {
+  description.value = currentProfile.value?.description || "";
+  editDescShow.value = true;
+}
+
+function saveDescription() {
+  if (!currentProfile.value) return;
+  updateProfileDescription(currentProfile.value.id, description.value);
+  editDescShow.value = false;
+  uni.showToast({ title: "保存成功", icon: "success", duration: 2000 });
+}
 
 // 统计相关变量
 const rangeKey = ref<"week" | "month" | "quarter" | "custom">("week");
@@ -264,7 +312,7 @@ function rebuildAggIndex() {
     topEmoIdsByProfile = nextTopEmoIdsByProfile;
 
     // 只有当前在统计tab时才渲染
-    if (activeTab.value === 1) {
+    if (activeTab.value === 2) {
       scheduleRerenderAll();
     }
   }, 0);
@@ -500,7 +548,7 @@ onMounted(async () => {
 watch(
   () => [rangeKey.value, profileList.value.length],
   async () => {
-    if (activeTab.value === 1) {
+    if (activeTab.value === 2) {
       scheduleRerenderAll();
     }
   }
@@ -512,7 +560,7 @@ watch(
       ? `${customRange.value.start}|${customRange.value.end}`
       : "",
   () => {
-    if (rangeKey.value === "custom" && activeTab.value === 1) scheduleRerenderAll();
+    if (rangeKey.value === "custom" && activeTab.value === 2) scheduleRerenderAll();
   }
 );
 
@@ -527,7 +575,7 @@ watch(
 // 监听tab切换，确保切换到统计tab时渲染图表
 watch(activeTab, async (newVal) => {
   console.log("activeTab changed to:", newVal); // 调试日志
-  if (newVal === 1) {
+  if (newVal === 2) {
     // 等待DOM更新后多次尝试渲染
     await nextTick();
     setTimeout(() => {
@@ -624,6 +672,59 @@ function confirmCustomRange(e: any) {
       margin-left: auto;
       gap: 10px;
     }
+  }
+}
+
+/* 简介tab样式 */
+.desc-tab {
+  padding: 15px 10px;
+}
+
+.desc-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  background-color: #fff;
+  border-radius: 8px;
+  padding: 15px;
+  min-height: 80px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+.desc-card-body {
+  flex: 1;
+  padding-right: 12px;
+
+  .desc-text {
+    font-size: 14px;
+    color: #666;
+    line-height: 1.6;
+    display: block;
+    word-break: break-all;
+  }
+
+  .desc-empty {
+    font-size: 14px;
+    color: #999;
+    font-style: italic;
+  }
+}
+
+.desc-card-edit {
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+.desc-edit-wrap {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+
+  :deep(.u-textarea) {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
   }
 }
 

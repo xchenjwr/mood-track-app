@@ -132,12 +132,19 @@ export const useEmoStore = defineStore("emo", () => {
   });
   const currentProfileName = computed(() => currentProfile.value?.name || "");
 
-  function createProfile(name: string) {
+  function createProfile(name: string, description?: string) {
     const trimmed = String(name || "").trim();
     if (!trimmed) return;
     if (profileNameArray.value.some((n) => n === trimmed)) return;
     const id = getId(profileIdArray.value);
-    data.value.profiles.push({ id, name: trimmed, emos: [] });
+    const desc = (description || "").trim().slice(0, 100); // 限制100字以内
+    data.value.profiles.push({
+      id,
+      name: trimmed,
+      description: desc,
+      locked: false,
+      emos: [],
+    });
     save();
   }
 
@@ -154,6 +161,27 @@ export const useEmoStore = defineStore("emo", () => {
     data.value.profiles[targetIndex] = {
       ...data.value.profiles[targetIndex],
       name: trimmed,
+    };
+    save();
+  }
+
+  function updateProfileDescription(id: number, description: string) {
+    const targetIndex = data.value.profiles.findIndex((p) => p.id === id);
+    if (targetIndex === -1) return;
+    const desc = description.trim().slice(0, 100); // 限制100字以内
+    data.value.profiles[targetIndex] = {
+      ...data.value.profiles[targetIndex],
+      description: desc,
+    };
+    save();
+  }
+
+  function updateProfileLocked(id: number, locked: boolean) {
+    const targetIndex = data.value.profiles.findIndex((p) => p.id === id);
+    if (targetIndex === -1) return;
+    data.value.profiles[targetIndex] = {
+      ...data.value.profiles[targetIndex],
+      locked,
     };
     save();
   }
@@ -363,6 +391,8 @@ export const useEmoStore = defineStore("emo", () => {
     currentProfile,
     createProfile,
     updateProfileName,
+    updateProfileDescription,
+    updateProfileLocked,
     deleteProfile,
     switchProfile,
     transferEmoToProfile,

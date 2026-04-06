@@ -20,11 +20,13 @@ interface EmoType {
 }
 
 /**
- * 一个“对象/分组”（例如：个人、张三朋友）
+ * 一个"对象/分组"（例如：个人、张三朋友）
  */
 interface ProfileType {
   id: number;
   name: string;
+  description?: string; // 简介，100字以内
+  locked?: boolean; // 是否锁定
   emos: Array<EmoType>;
 }
 
