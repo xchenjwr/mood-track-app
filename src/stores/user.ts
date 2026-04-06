@@ -1,7 +1,12 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import { getId } from "@/utils";
-import type { AppDataV2, EmoType, ProfileType, RecordType } from "@/common/interfaces";
+import type {
+  AppDataV2,
+  EmoType,
+  ProfileType,
+  RecordType,
+} from "@/common/interfaces";
 
 export const useEmoStore = defineStore("emo", () => {
   const STORAGE_KEY = "userInfo";
@@ -15,11 +20,13 @@ export const useEmoStore = defineStore("emo", () => {
 
   // 当前对象（profile）
   const currentProfile = computed<ProfileType | undefined>(() =>
-    data.value.profiles.find((p) => p.id === data.value.currentProfileId),
+    data.value.profiles.find((p) => p.id === data.value.currentProfileId)
   );
 
   // 兼容旧 API：当前对象下的情绪数组
-  const emoArray = computed<Array<EmoType>>(() => currentProfile.value?.emos || []);
+  const emoArray = computed<Array<EmoType>>(
+    () => currentProfile.value?.emos || []
+  );
 
   // getter
 
@@ -30,15 +37,15 @@ export const useEmoStore = defineStore("emo", () => {
 
   // 情绪ID数组， 自增ID需要
   let emoIdArray = computed(
-    () => emoArray.value.map((item: EmoType) => item.id) || [],
+    () => emoArray.value.map((item: EmoType) => item.id) || []
   );
 
   // 按照记录数量排序的情绪列表
   let emoList = computed(
     () =>
       [...emoArray.value].sort(
-        (x: EmoType, y: EmoType) => y.record.length - x.record.length,
-      ) || [],
+        (x: EmoType, y: EmoType) => y.record.length - x.record.length
+      ) || []
   );
 
   // actions
@@ -49,7 +56,9 @@ export const useEmoStore = defineStore("emo", () => {
   }
 
   function ensureCurrentProfile() {
-    const exists = data.value.profiles.some((p) => p.id === data.value.currentProfileId);
+    const exists = data.value.profiles.some(
+      (p) => p.id === data.value.currentProfileId
+    );
     if (!exists) {
       data.value.currentProfileId = data.value.profiles[0]?.id || 1;
     }
@@ -76,11 +85,14 @@ export const useEmoStore = defineStore("emo", () => {
             emos: Array.isArray(p.emos) ? (p.emos as Array<EmoType>) : [],
           }))
           .filter((p) => p.id > 0 && p.name);
-        const currentProfileId = Number(obj.currentProfileId) || profiles[0]?.id || 1;
+        const currentProfileId =
+          Number(obj.currentProfileId) || profiles[0]?.id || 1;
         return {
           version: 2,
           currentProfileId,
-          profiles: profiles.length ? profiles : [{ id: 1, name: "个人", emos: [] }],
+          profiles: profiles.length
+            ? profiles
+            : [{ id: 1, name: "个人", emos: [] }],
         };
       }
     }
@@ -109,7 +121,9 @@ export const useEmoStore = defineStore("emo", () => {
   }
 
   // ---- 对象（profile）管理 ----
-  const profileNameArray = computed(() => data.value.profiles.map((p) => p.name));
+  const profileNameArray = computed(() =>
+    data.value.profiles.map((p) => p.name)
+  );
   const profileIdArray = computed(() => data.value.profiles.map((p) => p.id));
   const profileList = computed(() => {
     const total = (p: ProfileType) =>
@@ -133,9 +147,14 @@ export const useEmoStore = defineStore("emo", () => {
     const targetIndex = data.value.profiles.findIndex((p) => p.id === id);
     if (targetIndex === -1) return;
     // 重名校验（允许改回自身原名）
-    const exists = data.value.profiles.some((p) => p.name === trimmed && p.id !== id);
+    const exists = data.value.profiles.some(
+      (p) => p.name === trimmed && p.id !== id
+    );
     if (exists) return;
-    data.value.profiles[targetIndex] = { ...data.value.profiles[targetIndex], name: trimmed };
+    data.value.profiles[targetIndex] = {
+      ...data.value.profiles[targetIndex],
+      name: trimmed,
+    };
     save();
   }
 
@@ -195,9 +214,7 @@ export const useEmoStore = defineStore("emo", () => {
   function deleteEmo(id: number) {
     const p = currentProfile.value;
     if (!p) return;
-    const targetIndex = p.emos.findIndex(
-      (item: EmoType) => item.id === id,
-    );
+    const targetIndex = p.emos.findIndex((item: EmoType) => item.id === id);
     if (targetIndex === -1) return;
     p.emos.splice(targetIndex, 1);
     save();
@@ -212,9 +229,7 @@ export const useEmoStore = defineStore("emo", () => {
   function updateEmo(id: number, newName: string) {
     const p = currentProfile.value;
     if (!p) return;
-    let targetEmoIndex = p.emos.findIndex(
-      (item: EmoType) => item.id === id,
-    );
+    let targetEmoIndex = p.emos.findIndex((item: EmoType) => item.id === id);
     if (targetEmoIndex === -1) {
       return;
     }
@@ -265,14 +280,12 @@ export const useEmoStore = defineStore("emo", () => {
   function updateRecord(eid: number, rid: number, desc: string = "") {
     const p = currentProfile.value;
     if (!p) return;
-    const targetEmoIndex = p.emos.findIndex(
-      (item: EmoType) => item.id === eid,
-    );
+    const targetEmoIndex = p.emos.findIndex((item: EmoType) => item.id === eid);
     if (targetEmoIndex === -1) {
       return;
     }
     let targetRecordIndex = p.emos[targetEmoIndex].record.findIndex(
-      (item: RecordType) => item.id === rid,
+      (item: RecordType) => item.id === rid
     );
     if (targetRecordIndex === -1) {
       return;
@@ -293,14 +306,12 @@ export const useEmoStore = defineStore("emo", () => {
   function deleteRecord(eid: number, rid: number) {
     const p = currentProfile.value;
     if (!p) return;
-    const targetEmoIndex = p.emos.findIndex(
-      (item: EmoType) => item.id === eid,
-    );
+    const targetEmoIndex = p.emos.findIndex((item: EmoType) => item.id === eid);
     if (targetEmoIndex === -1) {
       return;
     }
     const targetRecordIndex = p.emos[targetEmoIndex].record.findIndex(
-      (item) => item.id === rid,
+      (item) => item.id === rid
     );
     if (targetRecordIndex === -1) {
       return;
@@ -323,28 +334,24 @@ export const useEmoStore = defineStore("emo", () => {
   function transferRecord(eid: number, rid: number, targetEid: number) {
     const p = currentProfile.value;
     if (!p) return;
-    const sourceEmoIndex = p.emos.findIndex(
-      (item: EmoType) => item.id === eid,
-    );
+    const sourceEmoIndex = p.emos.findIndex((item: EmoType) => item.id === eid);
     if (sourceEmoIndex === -1) {
       return;
     }
     const recordIndex = p.emos[sourceEmoIndex].record.findIndex(
-      (item: RecordType) => item.id === rid,
+      (item: RecordType) => item.id === rid
     );
     if (recordIndex === -1) {
       return;
     }
     let [record] = p.emos[sourceEmoIndex].record.splice(recordIndex, 1);
     const targetEmoIndex = p.emos.findIndex(
-      (item: EmoType) => item.id === targetEid,
+      (item: EmoType) => item.id === targetEid
     );
     if (targetEmoIndex === -1) {
       return;
     }
-    record.id = getId(
-      p.emos[targetEmoIndex].record.map((item) => item.id),
-    );
+    record.id = getId(p.emos[targetEmoIndex].record.map((item) => item.id));
     p.emos[targetEmoIndex].record.push(record);
     save();
   }
@@ -353,6 +360,7 @@ export const useEmoStore = defineStore("emo", () => {
     data,
     profileList,
     currentProfileName,
+    currentProfile,
     createProfile,
     updateProfileName,
     deleteProfile,
