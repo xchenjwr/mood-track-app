@@ -5,17 +5,23 @@
       :title="navTitle"
       left-icon="arrow-left"
       @left-click="goBack"
-      :placeholder="true"
-    />
-
+      right-icon="setting"
+      @right-click="openProfileActions"
+      :placeholder="true" />
     <!-- Tabs标签 -->
-    <up-tabs v-model="activeTab" :current="activeTab" :list="tabs" @change="handleTabChange" />
+    <up-tabs
+      v-model="activeTab"
+      :current="activeTab"
+      :list="tabs"
+      @change="handleTabChange" />
 
     <!-- 简介tab -->
     <view v-if="activeTab === 0" class="desc-tab">
       <view class="desc-card">
         <view class="desc-card-body">
-          <text v-if="profileDescription" class="desc-text">{{ profileDescription }}</text>
+          <text v-if="profileDescription" class="desc-text">
+            {{ profileDescription }}
+          </text>
           <text v-else class="desc-empty">暂无简介信息，点击右侧图标添加</text>
         </view>
         <view class="desc-card-edit" @tap.stop="openEditDesc">
@@ -32,8 +38,7 @@
           v-for="item in emoList"
           :key="item.id"
           :showHead="false"
-          @tap="toEmoDetail(item.id)"
-        >
+          @tap="toEmoDetail(item.id)">
           <template #body>
             <view class="emo-cell">
               <view>{{ item.name }}</view>
@@ -41,8 +46,7 @@
                 <up-badge
                   class="badge"
                   type="error"
-                  :value="item.record.length"
-                ></up-badge>
+                  :value="item.record.length"></up-badge>
                 <up-icon name="arrow-right"></up-icon>
               </view>
             </view>
@@ -58,47 +62,45 @@
         <up-button
           size="small"
           :type="rangeKey === 'week' ? 'primary' : 'default'"
-          @click="setRange('week')"
-        >
+          @click="setRange('week')">
           近一周
         </up-button>
         <up-button
           size="small"
           :type="rangeKey === 'month' ? 'primary' : 'default'"
-          @click="setRange('month')"
-        >
+          @click="setRange('month')">
           近一月
         </up-button>
         <up-button
           size="small"
           :type="rangeKey === 'quarter' ? 'primary' : 'default'"
-          @click="setRange('quarter')"
-        >
+          @click="setRange('quarter')">
           近三个月
         </up-button>
         <up-button
           size="small"
           :type="rangeKey === 'custom' ? 'primary' : 'default'"
-          @click="openCustomRange"
-        >
+          @click="openCustomRange">
           自定义
         </up-button>
       </view>
 
       <view class="card">
         <view class="card-title">
-          情绪记录次数趋势
+          情绪统计
           <text class="hint">（默认展示Top 5情绪）</text>
         </view>
-        <scroll-view scroll-x class="legend-scroll" v-if="emoLegendItems.length">
+        <scroll-view
+          scroll-x
+          class="legend-scroll"
+          v-if="emoLegendItems.length">
           <view class="legend-row">
             <view
               v-for="it in emoLegendItems"
               :key="it.name"
               class="legend-item"
               :class="{ off: it.hidden }"
-              @tap="toggleEmoLegend(it.name)"
-            >
+              @tap="toggleEmoLegend(it.name)">
               <view class="dot" :style="{ backgroundColor: it.color }"></view>
               <text class="legend-text">{{ it.name }}</text>
             </view>
@@ -117,8 +119,7 @@
         rangePrompt="选择天数不能超过 3 个月"
         :showRangePrompt="true"
         @confirm="confirmCustomRange"
-        @close="customCalendarShow = false"
-      />
+        @close="customCalendarShow = false" />
     </view>
 
     <!-- 编辑简介弹窗 -->
@@ -127,23 +128,62 @@
       title="编辑简介"
       showCancelButton
       @confirm="saveDescription"
-      @cancel="editDescShow = false"
-    >
+      @cancel="editDescShow = false">
       <view class="desc-edit-wrap">
         <up-textarea
           v-model="description"
           placeholder="请输入对象简介（100字以内）"
           maxlength="100"
           count
-          :height="120"
-        />
+          :height="120" />
+      </view>
+    </up-modal>
+
+    <!-- 对象操作菜单 -->
+    <up-action-sheet
+      :show="profileActionsShow"
+      :actions="profileActions"
+      @select="selectProfileAction"
+      @close="profileActionsShow = false" />
+    <!-- 修改对象名称 -->
+    <up-modal
+      :show="editProfileShow"
+      title="修改对象名称"
+      showCancelButton
+      @confirm="confirmEditProfile"
+      @cancel="editProfileShow = false">
+      <view class="pd-15">
+        <up-input
+          v-model="editProfileName"
+          placeholder="对象名称（10字以内）"
+          maxlength="10" />
+      </view>
+    </up-modal>
+
+    <!-- 悬浮新增情绪按钮（列表tab时显示） -->
+    <view v-if="activeTab === 1" class="fab-btn" @tap="openCreateEmo">
+      <up-icon name="plus" size="24" color="#fff"></up-icon>
+    </view>
+
+    <!-- 新增情绪弹窗 -->
+    <up-modal
+      :show="createEmoShow"
+      title="新增情绪"
+      showCancelButton
+      @confirm="confirmCreateEmo"
+      @cancel="createEmoShow = false">
+      <view class="pd-15">
+        <up-input
+          v-model="newEmoName"
+          placeholder="情绪名称（10字以内）"
+          maxlength="10" />
       </view>
     </up-modal>
   </view>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, nextTick, onMounted, watch } from "vue";
+import { ref, computed, nextTick, onMounted, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { onLoad } from "@dcloudio/uni-app";
 import dayjs from "dayjs";
@@ -153,22 +193,31 @@ import type { ProfileType } from "@/common/interfaces";
 import { useEmoStore } from "@/stores/user";
 
 const store = useEmoStore();
-const { emoList, currentProfileName, profileList, data, currentProfile } = storeToRefs(store);
-const { updateProfileDescription } = store;
+const { emoList, currentProfileName, profileList, data, currentProfile } =
+  storeToRefs(store);
+const {
+  updateProfileDescription,
+  updateProfileName,
+  updateProfileLocked,
+  deleteProfile,
+  createEmo,
+} = store;
 
 const navTitle = computed(() => {
   const n = currentProfileName.value || "";
-  return n ? `情绪（${n}）` : "情绪";
+  return n ? `${n}` : "情绪";
 });
 
 // Tabs相关
 const activeTab = ref(1);
-const tabs = [{ name: "简介" }, { name: "列表" }, { name: "统计" }];
+const tabs = [{ name: "简介" }, { name: "情绪" }, { name: "统计" }];
 
 // 简介相关
 const description = ref("");
 const editDescShow = ref(false);
-const profileDescription = computed(() => currentProfile.value?.description || "");
+const profileDescription = computed(
+  () => currentProfile.value?.description || ""
+);
 
 function openEditDesc() {
   description.value = currentProfile.value?.description || "";
@@ -180,6 +229,101 @@ function saveDescription() {
   updateProfileDescription(currentProfile.value.id, description.value);
   editDescShow.value = false;
   uni.showToast({ title: "保存成功", icon: "success", duration: 2000 });
+}
+
+// 对象操作相关
+const profileActionsShow = ref(false);
+const editProfileShow = ref(false);
+const editProfileName = ref("");
+
+const profileActions = computed(() => {
+  const isLocked = currentProfile.value?.locked || false;
+  return [
+    { name: "修改对象名称", value: 0 },
+    { name: isLocked ? "解锁对象" : "锁定对象", value: 2 },
+    { name: "删除对象", value: 1 },
+  ];
+});
+
+function openProfileActions() {
+  profileActionsShow.value = true;
+}
+
+function selectProfileAction(e: any) {
+  const v = Number(e?.value);
+  profileActionsShow.value = false;
+  switch (v) {
+    case 0:
+      editProfileName.value = currentProfile.value?.name || "";
+      editProfileShow.value = true;
+      break;
+    case 1:
+      confirmDeleteProfile();
+      break;
+    case 2:
+      toggleProfileLock();
+      break;
+    default:
+      break;
+  }
+}
+
+function toggleProfileLock() {
+  if (!currentProfile.value) return;
+  const newLocked = !currentProfile.value.locked;
+
+  uni.showModal({
+    title: newLocked ? "锁定确认" : "解锁确认",
+    content: newLocked
+      ? `确定要锁定"${currentProfile.value.name}"吗？`
+      : `确定要解锁"${currentProfile.value.name}"吗？`,
+    success: (res) => {
+      if (res.confirm) {
+        updateProfileLocked(currentProfile.value!.id, newLocked);
+        currentProfile.value.locked = newLocked;
+        uni.showToast({
+          title: newLocked ? "已锁定" : "已解锁",
+          icon: "success",
+          duration: 2000,
+        });
+        if (newLocked) {
+          setTimeout(() => uni.navigateBack(), 500);
+        }
+      }
+    },
+  });
+}
+
+function confirmEditProfile() {
+  const name = editProfileName.value.trim();
+  if (!name) {
+    uni.showToast({ title: "请输入对象名称", icon: "none", duration: 2000 });
+    return;
+  }
+  if (currentProfile.value) {
+    updateProfileName(currentProfile.value.id, name);
+  }
+  editProfileShow.value = false;
+  uni.showToast({ title: "修改成功", icon: "success", duration: 2000 });
+}
+
+function confirmDeleteProfile() {
+  if (!currentProfile.value) return;
+  if (profileList.value.length <= 1) {
+    uni.showToast({ title: "至少保留一个对象", icon: "none", duration: 2000 });
+    return;
+  }
+  uni.showModal({
+    title: "删除确认",
+    content: `是否删除对象"${currentProfile.value.name}"及其所有情绪记录？`,
+    success: function (res) {
+      if (res.confirm) {
+        deleteProfile(currentProfile.value!.id);
+        uni.showToast({ title: "删除成功", icon: "success", duration: 2000 });
+        setTimeout(() => uni.navigateBack(), 500);
+      }
+    },
+  });
 }
 
 // 统计相关变量
@@ -440,7 +584,7 @@ function getCanvasSize(
 async function renderEmoChart() {
   const p = currentProfile.value;
   if (!p) return;
-  
+
   const { categories, series } = calcEmoSeries(rangeKey.value, p);
   const maxVal =
     series.reduce((m: number, s: any) => Math.max(m, ...(s.data || [0])), 0) ||
@@ -560,7 +704,8 @@ watch(
       ? `${customRange.value.start}|${customRange.value.end}`
       : "",
   () => {
-    if (rangeKey.value === "custom" && activeTab.value === 2) scheduleRerenderAll();
+    if (rangeKey.value === "custom" && activeTab.value === 2)
+      scheduleRerenderAll();
   }
 );
 
@@ -590,11 +735,24 @@ function goBack() {
   uni.navigateBack();
 }
 
-// 增加情绪页
-function toAddEmo() {
-  uni.navigateTo({
-    url: "/pages/emo/create",
-  });
+// 新增情绪弹窗相关
+const createEmoShow = ref(false);
+const newEmoName = ref("");
+
+function openCreateEmo() {
+  newEmoName.value = "";
+  createEmoShow.value = true;
+}
+
+function confirmCreateEmo() {
+  const name = newEmoName.value.trim();
+  if (!name) {
+    uni.showToast({ title: "请输入情绪名称", icon: "none", duration: 2000 });
+    return;
+  }
+  createEmo(name);
+  createEmoShow.value = false;
+  uni.showToast({ title: "新增成功", icon: "success", duration: 2000 });
 }
 
 // 进入情绪详情页
@@ -607,10 +765,10 @@ function toEmoDetail(id: number) {
 // 处理tab切换 - 兼容多种事件格式
 function handleTabChange(e: any) {
   console.log("Tab change event:", JSON.stringify(e)); // 调试日志
-  
+
   // 尝试多种方式获取索引值
   let newIndex = 0;
-  
+
   if (typeof e === "number") {
     newIndex = e;
   } else if (e && typeof e.index !== "undefined") {
@@ -626,9 +784,9 @@ function handleTabChange(e: any) {
   } else if (e && typeof e.value !== "undefined") {
     newIndex = e.value;
   }
-  
+
   console.log("Parsed tab index:", newIndex); // 调试日志
-  
+
   // 确保索引在有效范围内
   if (newIndex >= 0 && newIndex < tabs.length) {
     activeTab.value = newIndex;
@@ -660,6 +818,10 @@ function confirmCustomRange(e: any) {
 </script>
 
 <style lang="less">
+.navbar-right {
+  padding: 8px 12px;
+}
+
 .emo-list {
   padding: 10px;
   .emo-cell {
@@ -807,5 +969,25 @@ function confirmCustomRange(e: any) {
 .legend-text {
   font-size: 12px;
   color: #333;
+}
+
+.fab-btn {
+  position: fixed;
+  right: 24px;
+  bottom: 25%;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3c9cff, #2b7fe8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(60, 156, 255, 0.35);
+  z-index: 100;
+
+  &:active {
+    transform: scale(0.92);
+    opacity: 0.85;
+  }
 }
 </style>

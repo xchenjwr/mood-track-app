@@ -1,21 +1,16 @@
 <template>
   <view>
     <!-- 导航栏 -->
-    <up-navbar
-      title="对象"
-      left-icon=""
-      right-icon="plus-circle"
-      @right-click="openCreateProfile"
-      :placeholder="true" />
+    <up-navbar title="对象" left-icon="" :placeholder="true" />
     <!-- 对象列表（两列卡片） -->
-    <view v-if="profileList.length" class="profile-grid">
+    <view v-if="sortedProfileList.length" class="profile-grid">
       <view
         class="profile-card"
         :class="{ locked: p.locked }"
-        v-for="p in profileList"
+        v-for="p in sortedProfileList"
         :key="p.id"
         @tap="!p.locked && enterProfile(p.id)"
-        @longpress="openProfileActions(p)">
+        @longpress="p.locked && openUnlockAction(p)">
         <up-card
           :showHead="false"
           @tap="!p.locked && enterProfile(p.id)"
@@ -37,26 +32,12 @@
       </view>
     </view>
     <up-empty v-else class="no-list-data" mode="list" />
-    <!-- 对象操作 -->
+    <!-- 解锁操作菜单 -->
     <up-action-sheet
-      :show="profileActionsShow"
-      :actions="profileActions"
-      @select="selectProfileAction"
-      @close="profileActionsShow = false" />
-    <!-- 修改对象名称 -->
-    <up-modal
-      :show="editProfileShow"
-      title="修改对象名称"
-      showCancelButton
-      @confirm="confirmEditProfile"
-      @cancel="editProfileShow = false">
-      <view class="pd-15">
-        <up-input
-          v-model="editProfileName"
-          placeholder="对象名称（10字以内）"
-          maxlength="10" />
-      </view>
-    </up-modal>
+      :show="unlockActionShow"
+      :actions="unlockActions"
+      @select="selectUnlockAction"
+      @close="unlockActionShow = false" />
     <!-- 新增对象 -->
     <up-modal
       :show="createProfileShow"
@@ -77,123 +58,74 @@
           :style="{ marginTop: '10px' }" />
       </view>
     </up-modal>
+
+    <!-- 悬浮新增按钮 -->
+    <view class="fab-btn" @tap="openCreateProfile">
+      <up-icon name="plus" size="24" color="#fff"></up-icon>
+    </view>
+
     <CustomTabBar />
   </view>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from "vue";
+import { ref, computed } from "vue";
 import { storeToRefs } from "pinia";
 import { useEmoStore } from "@/stores/user";
 import type { ProfileType } from "@/common/interfaces";
 import CustomTabBar from "@/common/components/custom-tab-bar.vue";
 
 const store = useEmoStore();
-const {
-  switchProfile,
-  createProfile,
-  updateProfileName,
-  updateProfileLocked,
-  deleteProfile,
-} = store;
-const { profileList, data } = storeToRefs(store);
+const { switchProfile, createProfile, updateProfileLocked } = store;
+const { profileList: rawProfileList } = storeToRefs(store);
+
+const sortedProfileList = computed(() => {
+  return [...rawProfileList.value].sort((a, b) => {
+    if (a.locked !== b.locked) return a.locked ? 1 : -1;
+    return getRecordTotal(b) - getRecordTotal(a);
+  });
+});
 
 const createProfileShow = ref(false);
 const newProfileName = ref("");
 const newProfileDescription = ref("");
 
-const profileActionsShow = ref(false);
-const editProfileShow = ref(false);
-const editProfileName = ref("");
-const selectedProfile = reactive<ProfileType>({} as ProfileType);
+// 解锁操作相关
+const unlockActionShow = ref(false);
+const unlockTargetId = ref(0);
+const unlockTargetName = ref("");
 
-const profileActions = computed(() => {
-  const isLocked = selectedProfile.locked || false;
-  return [
-    { name: "修改名称", value: 0 },
-    { name: isLocked ? "解锁对象" : "锁定对象", value: 2 },
-    { name: "删除对象", value: 1 },
-  ];
-});
+const unlockActions = computed(() => [{ name: "解锁对象", value: 0 }]);
+
+function openUnlockAction(p: ProfileType) {
+  unlockTargetId.value = p.id;
+  unlockTargetName.value = p.name;
+  unlockActionShow.value = true;
+}
+
+function selectUnlockAction(e: any) {
+  const v = Number(e?.value);
+  unlockActionShow.value = false;
+  if (v === 0) {
+    confirmUnlock();
+  }
+}
+
+function confirmUnlock() {
+  uni.showModal({
+    title: "解锁确认",
+    content: `确定要解锁"${unlockTargetName.value}"吗？`,
+    success: (res) => {
+      if (res.confirm) {
+        updateProfileLocked(unlockTargetId.value, false);
+        uni.showToast({ title: "已解锁", icon: "success", duration: 2000 });
+      }
+    },
+  });
+}
 
 function getRecordTotal(p: ProfileType) {
   return p.emos?.reduce((sum, emo) => sum + (emo.record?.length || 0), 0) || 0;
-}
-
-function openProfileActions(p: ProfileType) {
-  selectedProfile.id = p.id;
-  selectedProfile.name = p.name;
-  selectedProfile.emos = p.emos;
-  selectedProfile.description = p.description;
-  selectedProfile.locked = p.locked;
-  profileActionsShow.value = true;
-}
-
-function selectProfileAction(e: any) {
-  const v = Number(e?.value);
-  profileActionsShow.value = false;
-  switch (v) {
-    case 0:
-      editProfileName.value = selectedProfile.name || "";
-      editProfileShow.value = true;
-      break;
-    case 1:
-      confirmDeleteProfile();
-      break;
-    case 2:
-      toggleProfileLock();
-      break;
-    default:
-      break;
-  }
-}
-
-function toggleProfileLock() {
-  const newLocked = !selectedProfile.locked;
-
-  uni.showModal({
-    title: newLocked ? "锁定确认" : "解锁确认",
-    content: newLocked
-      ? `确定要锁定"${selectedProfile.name}"吗？锁定后将无法查看该对象的情绪数据。`
-      : `确定要解锁"${selectedProfile.name}"吗？`,
-    success: (res) => {
-      if (res.confirm) {
-        updateProfileLocked(selectedProfile.id, newLocked);
-        selectedProfile.locked = newLocked;
-        uni.showToast({
-          title: newLocked ? "已锁定" : "已解锁",
-          icon: "success",
-          duration: 2000,
-        });
-      }
-    },
-  });
-}
-
-function confirmEditProfile() {
-  const name = editProfileName.value.trim();
-  if (!name) {
-    uni.showToast({ title: "请输入对象名称", icon: "none", duration: 2000 });
-    return;
-  }
-  updateProfileName(selectedProfile.id, name);
-  editProfileShow.value = false;
-}
-
-function confirmDeleteProfile() {
-  if (profileList.value.length <= 1) {
-    uni.showToast({ title: "至少保留一个对象", icon: "none", duration: 2000 });
-    return;
-  }
-  uni.showModal({
-    title: "删除确认",
-    content: `是否删除对象“${selectedProfile.name}”及其所有情绪记录？`,
-    success: function (res) {
-      if (res.confirm) {
-        deleteProfile(selectedProfile.id);
-      }
-    },
-  });
 }
 
 function openCreateProfile() {
@@ -210,6 +142,7 @@ function confirmCreateProfile() {
   }
   createProfile(name, newProfileDescription.value);
   createProfileShow.value = false;
+  uni.showToast({ title: "新增成功", icon: "success", duration: 2000 });
 }
 
 function enterProfile(id: number) {
@@ -260,5 +193,25 @@ function enterProfile(id: number) {
 }
 .sep {
   margin: 0 6px;
+}
+
+.fab-btn {
+  position: fixed;
+  right: 24px;
+  bottom: 25%;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3c9cff, #2b7fe8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(60, 156, 255, 0.35);
+  z-index: 100;
+
+  &:active {
+    transform: scale(0.92);
+    opacity: 0.85;
+  }
 }
 </style>

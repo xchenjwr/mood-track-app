@@ -229,7 +229,7 @@ export const useEmoStore = defineStore("emo", () => {
     p.emos.push({
       id: getId(emoIdArray.value),
       name,
-      record: [{ id: 1, desc, time: Math.floor(Date.now() / 1000) }],
+      record: [],
     });
     save();
   }

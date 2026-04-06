@@ -6,14 +6,12 @@
         labelWidth="auto"
         :model="emoData"
         :rules="emoRules"
-        ref="form"
-      >
+        ref="form">
         <up-form-item label="修改情绪" prop="name">
           <up-input
             v-model="emoData.name"
             placeholder="10字以内"
-            maxlength="10"
-          ></up-input>
+            maxlength="10"></up-input>
         </up-form-item>
       </up-form>
     </up-modal>
@@ -70,6 +68,7 @@ function submit() {
       if (valid && id?.value && emoData.value.name) {
         updateEmo(id.value, emoData.value.name);
         emit("update:show", false);
+        uni.showToast({ title: "修改成功", icon: "success", duration: 2000 });
       }
     })
     .catch(() => {});

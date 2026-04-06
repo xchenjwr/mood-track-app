@@ -5,7 +5,7 @@
       :title="emoData?.name"
       left-icon="arrow-left"
       @left-click="goBack"
-      right-icon="list"
+      right-icon="setting"
       @right-click="openEmoActions"
       :placeholder="true" />
 
@@ -33,6 +33,29 @@
       valueName="value"
       @confirm="transferEmoConfirm"
       @cancel="transferProfileShow = false" />
+
+    <!-- 悬浮新增记录按钮 -->
+    <view class="fab-btn" @tap="openAddRecord">
+      <up-icon name="plus" size="24" color="#fff"></up-icon>
+    </view>
+
+    <!-- 新增记录弹窗 -->
+    <up-modal
+      :show="addRecordShow"
+      title="新增记录"
+      showCancelButton
+      @confirm="confirmAddRecord"
+      @cancel="addRecordShow = false"
+      :closeOnClickOverlay="true">
+      <view class="record-edit-wrap">
+        <up-textarea
+          v-model="recordDesc"
+          placeholder="记录描述（50字以内）"
+          maxlength="50"
+          count
+          :height="100" />
+      </view>
+    </up-modal>
   </view>
 </template>
 <script lang="ts" setup>
@@ -48,16 +71,25 @@ import RecordList from "./record-list.vue";
 import EditEmoModal from "@/pages/index/components/edit-emo-modal.vue";
 
 const store = useEmoStore();
-const { getEmo, deleteEmo, transferEmoToProfile, switchProfile } = store;
+const { getEmo, deleteEmo, transferEmoToProfile, switchProfile, addRecord } =
+  store;
 const { profileList, data } = storeToRefs(store);
 
+const emoId = ref(0); // 情绪ID
 let emoData = reactive({} as EmoType); // 情绪详情数据
+
+// 从store同步最新情绪数据
+function syncEmoData() {
+  const emo = emoId.value && getEmo(emoId.value);
+  if (emo) {
+    Object.assign(emoData, emo);
+  }
+}
 let emoActionsShow = ref<boolean>(false); // 操作情绪抽屉显示状态
 const emoActions = [
-  { value: 0, name: "新增记录" },
-  { value: 1, name: "编辑名称" },
+  { value: 1, name: "修改情绪名称" },
   { value: 2, name: "删除情绪" },
-  { value: 3, name: "转移到对象" },
+  { value: 3, name: "转移到其他对象" },
 ];
 let editEmoShow = ref<boolean>(false); // 编辑情绪弹窗显示状态
 let transferProfileShow = ref<boolean>(false);
@@ -404,11 +436,8 @@ function scheduleRenderEmoOnly() {
 }
 
 onLoad((option: any) => {
-  const id = Number(option.id) || 0;
-  const emoItem = id && getEmo(id);
-  if (emoItem) {
-    emoData = emoItem;
-  }
+  emoId.value = Number(option.id) || 0;
+  syncEmoData();
 });
 
 onMounted(async () => {
@@ -437,6 +466,7 @@ watch(
   () => data.value?.profiles,
   () => {
     rebuildAggIndex();
+    syncEmoData();
   },
   { deep: true }
 );
@@ -455,9 +485,6 @@ function openEmoActions() {
 function selectAction(e: any) {
   const { value } = e;
   switch (value) {
-    case 0:
-      toCreateRecord();
-      break;
     case 1:
       editEmoShow.value = true;
       break;
@@ -473,11 +500,25 @@ function selectAction(e: any) {
   emoActionsShow.value = false;
 }
 
-// 创建新的记录
-function toCreateRecord() {
-  uni.navigateTo({
-    url: `/pages/emo/create?id=${emoData.id}`,
-  });
+// 新增记录弹窗相关
+const addRecordShow = ref(false);
+const recordDesc = ref("");
+
+function openAddRecord() {
+  recordDesc.value = "";
+  addRecordShow.value = true;
+}
+
+function confirmAddRecord() {
+  if (!emoData.id) return;
+  const desc = recordDesc.value.trim();
+  if (!desc) {
+    uni.showToast({ title: "请输入记录描述", icon: "none", duration: 2000 });
+    return;
+  }
+  addRecord(emoData.id, desc);
+  addRecordShow.value = false;
+  uni.showToast({ title: "新增成功", icon: "success", duration: 2000 });
 }
 
 function openTransferProfile() {
@@ -502,8 +543,9 @@ function transferEmoConfirm(e: any) {
     success: function (res) {
       if (res.confirm) {
         transferEmoToProfile(emoData.id, target.value);
+        uni.showToast({ title: "转移成功", icon: "success", duration: 2000 });
         switchProfile(target.value);
-        uni.navigateBack();
+        setTimeout(() => uni.navigateBack(), 500);
       }
     },
   });
@@ -517,7 +559,8 @@ function delEmo() {
     success: function (res) {
       if (res.confirm) {
         deleteEmo(emoData.id);
-        uni.navigateBack();
+        uni.showToast({ title: "删除成功", icon: "success", duration: 2000 });
+        setTimeout(() => uni.navigateBack(), 500);
       }
     },
   });
@@ -649,5 +692,38 @@ function confirmCustomRange(e: any) {
   flex: 1;
   font-size: 13px;
   color: #333;
+}
+
+.record-edit-wrap {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+
+  :deep(.u-textarea) {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+}
+
+.fab-btn {
+  position: fixed;
+  right: 24px;
+  bottom: 25%;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3c9cff, #2b7fe8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(60, 156, 255, 0.35);
+  z-index: 100;
+
+  &:active {
+    transform: scale(0.92);
+    opacity: 0.85;
+  }
 }
 </style>

@@ -30,7 +30,7 @@
     </view>
 
     <view class="card">
-      <view class="card-title">不同对象：情绪记录次数趋势</view>
+      <view class="card-title">对象情绪统计</view>
       <scroll-view
         scroll-x
         class="legend-scroll"
