@@ -354,6 +354,7 @@ let isUnmounted = false;
 let statsAborted = false;
 const emoHiddenMap = ref<Record<string, boolean>>({});
 const canvasSizeCache = new Map<string, { width: number; height: number }>();
+const aggVersion = ref(0); // 响应式版本号，触发 computed 重新计算
 
 // 统计数据相关
 let profileDayCounts = new Map<number, Map<string, number>>();
@@ -488,6 +489,7 @@ async function rebuildAggIndexAsync() {
   emoDayCounts = nextEmoDayCounts;
   emoNameByIdByProfile = nextEmoNameByIdByProfile;
   topEmoIdsByProfile = nextTopEmoIdsByProfile;
+  aggVersion.value++; // 触发依赖此值的 computed 重新计算
 
   if (activeTab.value === 2 && !statsAborted) {
     scheduleRerenderAll();
@@ -550,6 +552,7 @@ function calcEmoSeries(
 
 const emoLegendItems = computed(() => {
   if (activeTab.value !== 2) return [];
+  void aggVersion.value; // 响应式依赖：数据重建时触发重新计算
   const p = currentProfile.value;
   if (!p) return [];
   const topIds = topEmoIdsByProfile.get(p.id) || [];
@@ -788,18 +791,11 @@ watch(
 // 监听tab切换，确保切换到统计tab时渲染图表
 watch(activeTab, async (newVal) => {
   if (newVal === 2) {
-    // 切换到统计tab：重置状态，重建索引，再渲染图表
+    // 切换到统计tab：重置状态，重建索引（完成后自动触发渲染）
     isUnmounted = false;
     statsAborted = false;
     sysInfoCache = null;
     rebuildAggIndex();
-    await nextTick();
-    // 使用跟踪的定时器
-    if (retryRenderTimer) clearTimeout(retryRenderTimer);
-    retryRenderTimer = setTimeout(() => {
-      retryRenderTimer = null;
-      renderEmoChart();
-    }, 500);
   } else {
     // 离开统计tab，彻底中断所有计算和渲染
     cleanupStats();
