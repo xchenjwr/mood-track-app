@@ -82,6 +82,8 @@ export const useEmoStore = defineStore("emo", () => {
           .map((p) => ({
             id: Number(p.id) || 0,
             name: String(p.name || ""),
+            description: String(p.description || ""),
+            locked: Boolean(p.locked),
             emos: Array.isArray(p.emos) ? (p.emos as Array<EmoType>) : [],
           }))
           .filter((p) => p.id > 0 && p.name);
