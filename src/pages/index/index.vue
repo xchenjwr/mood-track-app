@@ -45,7 +45,7 @@
       showCancelButton
       @confirm="confirmCreateProfile"
       @cancel="createProfileShow = false">
-      <view class="pd-15">
+      <view class="modal-form">
         <up-input
           v-model="newProfileName"
           placeholder="对象名称（10字以内）"
@@ -55,7 +55,7 @@
           placeholder="对象简介（100字以内，选填）"
           maxlength="100"
           count
-          :style="{ marginTop: '10px' }" />
+          :style="{ marginTop: '12px' }" />
       </view>
     </up-modal>
 
@@ -193,6 +193,12 @@ function enterProfile(id: number) {
 }
 .sep {
   margin: 0 6px;
+}
+
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  padding: 0 8px;
 }
 
 .fab-btn {

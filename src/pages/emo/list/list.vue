@@ -172,7 +172,7 @@
       showCancelButton
       @confirm="confirmCreateEmo"
       @cancel="createEmoShow = false">
-      <view class="pd-15">
+      <view class="modal-form-lg">
         <up-input
           v-model="newEmoName"
           placeholder="情绪名称（10字以内）"
@@ -183,7 +183,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, watch } from "vue";
+import {
+  ref,
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  watch,
+  toRaw,
+} from "vue";
 import { storeToRefs } from "pinia";
 import { onLoad } from "@dcloudio/uni-app";
 import dayjs from "dayjs";
@@ -342,6 +350,8 @@ const calendarMonthNum = computed(() => {
 });
 
 let emoChart: any = null;
+let isUnmounted = false;
+let statsAborted = false;
 const emoHiddenMap = ref<Record<string, boolean>>({});
 const canvasSizeCache = new Map<string, { width: number; height: number }>();
 
@@ -351,6 +361,8 @@ let emoDayCounts = new Map<number, Map<number, Map<string, number>>>();
 let emoNameByIdByProfile = new Map<number, Map<number, string>>();
 let topEmoIdsByProfile = new Map<number, number[]>();
 let rebuildAggTimer: any = null;
+let retryRenderTimer: any = null; // 跟踪渲染重试定时器
+let sysInfoCache: any = null; // 缓存系统信息
 
 const palette = [
   "#3c9cff",
@@ -402,64 +414,84 @@ function bumpMapCount(
 }
 
 function rebuildAggIndex() {
+  if (isUnmounted || statsAborted) return;
   if (rebuildAggTimer) clearTimeout(rebuildAggTimer);
   rebuildAggTimer = setTimeout(() => {
+    if (isUnmounted || statsAborted) {
+      rebuildAggTimer = null;
+      return;
+    }
     rebuildAggTimer = null;
+    rebuildAggIndexAsync();
+  }, 300);
+}
 
-    const nextProfileDayCounts = new Map<number, Map<string, number>>();
-    const nextEmoDayCounts = new Map<
-      number,
-      Map<number, Map<string, number>>
-    >();
-    const nextEmoNameByIdByProfile = new Map<number, Map<number, string>>();
-    const nextTopEmoIdsByProfile = new Map<number, number[]>();
+// 分片异步重建索引：每个 profile 一个微任务，不阻塞主线程
+async function rebuildAggIndexAsync() {
+  const nextProfileDayCounts = new Map<number, Map<string, number>>();
+  const nextEmoDayCounts = new Map<number, Map<number, Map<string, number>>>();
+  const nextEmoNameByIdByProfile = new Map<number, Map<number, string>>();
+  const nextTopEmoIdsByProfile = new Map<number, number[]>();
 
-    const profiles = data.value?.profiles || [];
-    for (const p of profiles) {
-      const pDay = new Map<string, number>();
-      const emoMap = new Map<number, Map<string, number>>();
-      const emoTotals = new Map<number, number>();
-      const emoNames = new Map<number, string>();
+  // toRaw: O(1) 获取原始数据，避免 JSON 深拷贝的阻塞开销
+  const profiles = toRaw(data.value?.profiles) || [];
 
-      for (const emo of p.emos || []) {
-        emoNames.set(emo.id, emo.name);
+  for (let pi = 0; pi < profiles.length; pi++) {
+    // 每处理一个 profile 前检查中止标志
+    if (isUnmounted || statsAborted || activeTab.value !== 2) return;
 
-        const eDay = new Map<string, number>();
-        let eTotal = 0;
-        for (const r of emo.record || []) {
-          const ms = (r.time || 0) * 1000;
-          if (!ms) continue;
-          const dayMs = msAtLocalStartOfDay(ms);
-          const key = toYMDLocal(dayMs);
-          bumpMapCount(pDay, key, 1);
-          bumpMapCount(eDay, key, 1);
-          eTotal += 1;
-        }
-        emoMap.set(emo.id, eDay);
-        emoTotals.set(emo.id, eTotal);
+    const p = profiles[pi];
+    const pDay = new Map<string, number>();
+    const emoMap = new Map<number, Map<string, number>>();
+    const emoTotals = new Map<number, number>();
+    const emoNames = new Map<number, string>();
+
+    for (const emo of p.emos || []) {
+      if (isUnmounted || statsAborted) return;
+      emoNames.set(emo.id, emo.name);
+
+      const eDay = new Map<string, number>();
+      let eTotal = 0;
+      for (const r of emo.record || []) {
+        if (isUnmounted || statsAborted) return;
+        const ms = (r.time || 0) * 1000;
+        if (!ms) continue;
+        const dayMs = msAtLocalStartOfDay(ms);
+        const key = toYMDLocal(dayMs);
+        bumpMapCount(pDay, key, 1);
+        bumpMapCount(eDay, key, 1);
+        eTotal += 1;
       }
-
-      const topIds = [...emoTotals.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([id]) => id);
-
-      nextProfileDayCounts.set(p.id, pDay);
-      nextEmoDayCounts.set(p.id, emoMap);
-      nextTopEmoIdsByProfile.set(p.id, topIds);
-      nextEmoNameByIdByProfile.set(p.id, emoNames);
+      emoMap.set(emo.id, eDay);
+      emoTotals.set(emo.id, eTotal);
     }
 
-    profileDayCounts = nextProfileDayCounts;
-    emoDayCounts = nextEmoDayCounts;
-    emoNameByIdByProfile = nextEmoNameByIdByProfile;
-    topEmoIdsByProfile = nextTopEmoIdsByProfile;
+    const topIds = [...emoTotals.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([id]) => id);
 
-    // 只有当前在统计tab时才渲染
-    if (activeTab.value === 2) {
-      scheduleRerenderAll();
+    nextProfileDayCounts.set(p.id, pDay);
+    nextEmoDayCounts.set(p.id, emoMap);
+    nextTopEmoIdsByProfile.set(p.id, topIds);
+    nextEmoNameByIdByProfile.set(p.id, emoNames);
+
+    // 处理完一个 profile 后让出主线程，允许 UI 响应用户操作
+    if (pi < profiles.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
-  }, 0);
+  }
+
+  // 所有数据处理完成，赋值结果
+  if (isUnmounted || statsAborted || activeTab.value !== 2) return;
+  profileDayCounts = nextProfileDayCounts;
+  emoDayCounts = nextEmoDayCounts;
+  emoNameByIdByProfile = nextEmoNameByIdByProfile;
+  topEmoIdsByProfile = nextTopEmoIdsByProfile;
+
+  if (activeTab.value === 2 && !statsAborted) {
+    scheduleRerenderAll();
+  }
 }
 
 function getDayBuckets(key: "week" | "month" | "quarter" | "custom") {
@@ -517,6 +549,7 @@ function calcEmoSeries(
 }
 
 const emoLegendItems = computed(() => {
+  if (activeTab.value !== 2) return [];
   const p = currentProfile.value;
   if (!p) return [];
   const topIds = topEmoIdsByProfile.get(p.id) || [];
@@ -536,15 +569,17 @@ function toggleEmoLegend(name: string) {
     ...emoHiddenMap.value,
     [name]: !emoHiddenMap.value[name],
   };
-  nextTick().then(() => renderEmoChart());
+  if (activeTab.value === 2) {
+    nextTick().then(() => renderEmoChart());
+  }
 }
 
 function getCanvasSize(
   canvasId: string
 ): Promise<{ width: number; height: number }> {
-  // 每次都强制重新获取，不使用缓存
   return new Promise((resolve) => {
-    const sys = uni.getSystemInfoSync();
+    if (!sysInfoCache) sysInfoCache = uni.getSystemInfoSync();
+    const sys = sysInfoCache;
     const fallback = {
       width: Math.max(320, (sys.windowWidth || 375) - 20),
       height: 260,
@@ -552,7 +587,6 @@ function getCanvasSize(
 
     const platform = sys.platform;
     if (platform === "h5") {
-      // H5环境
       const canvas = document.getElementById(canvasId) as HTMLCanvasElement;
       if (canvas) {
         const rect = canvas.getBoundingClientRect();
@@ -565,7 +599,6 @@ function getCanvasSize(
         resolve(fallback);
       }
     } else {
-      // 小程序环境
       uni
         .createSelectorQuery()
         .select(`#${canvasId}`)
@@ -582,6 +615,7 @@ function getCanvasSize(
 }
 
 async function renderEmoChart() {
+  if (isUnmounted || statsAborted || activeTab.value !== 2) return;
   const p = currentProfile.value;
   if (!p) return;
 
@@ -591,20 +625,19 @@ async function renderEmoChart() {
     0;
   const niceY = calcNiceYAxis(maxVal, 5);
   const { width, height } = await getCanvasSize("emoLine");
-  const pixelRatio = uni.getSystemInfoSync().pixelRatio || 1;
 
-  // 获取canvas实例，兼容H5和小程序
+  // 使用缓存的系统信息
+  if (!sysInfoCache) sysInfoCache = uni.getSystemInfoSync();
+  const pixelRatio = sysInfoCache.pixelRatio || 1;
+  const platform = sysInfoCache.platform;
+
   let canvasContext = null;
-  const platform = uni.getSystemInfoSync().platform;
-
   if (platform === "h5") {
-    // H5环境
     const canvas = document.getElementById("emoLine") as HTMLCanvasElement;
     if (canvas && canvas.width > 0 && canvas.height > 0) {
       canvasContext = canvas.getContext("2d");
     }
   } else {
-    // 小程序环境
     canvasContext = uni.createCanvasContext("emoLine");
   }
 
@@ -613,7 +646,6 @@ async function renderEmoChart() {
     return;
   }
 
-  // 如果图表已存在，销毁重建
   if (emoChart) {
     try {
       if (typeof emoChart.destroy === "function") {
@@ -632,7 +664,7 @@ async function renderEmoChart() {
       categories,
       series,
       fontSize: 8,
-      animation: true,
+      animation: false,
       background: "#FFFFFF",
       pixelRatio,
       xAxis: {
@@ -669,24 +701,68 @@ async function renderEmoChart() {
 }
 
 async function rerenderAll() {
+  if (isUnmounted || statsAborted || activeTab.value !== 2) return;
   await nextTick();
-  // 多次尝试渲染，确保canvas已准备好
+  // 清除之前的重试定时器
+  if (retryRenderTimer) clearTimeout(retryRenderTimer);
   await renderEmoChart();
-  setTimeout(() => renderEmoChart(), 200);
-  setTimeout(() => renderEmoChart(), 500);
+  // 单次重试，使用跟踪的定时器
+  retryRenderTimer = setTimeout(() => {
+    retryRenderTimer = null;
+    renderEmoChart();
+  }, 400);
 }
 
 let scheduleAllTimer: any = null;
 function scheduleRerenderAll() {
+  if (isUnmounted || statsAborted || activeTab.value !== 2) return;
   if (scheduleAllTimer) clearTimeout(scheduleAllTimer);
   scheduleAllTimer = setTimeout(() => {
+    if (isUnmounted || statsAborted) {
+      scheduleAllTimer = null;
+      return;
+    }
     scheduleAllTimer = null;
     rerenderAll();
-  }, 100);
+  }, 200);
+}
+
+// 统一清理：中断所有统计相关的计算和渲染
+function cleanupStats() {
+  statsAborted = true;
+  if (retryRenderTimer) {
+    clearTimeout(retryRenderTimer);
+    retryRenderTimer = null;
+  }
+  if (scheduleAllTimer) {
+    clearTimeout(scheduleAllTimer);
+    scheduleAllTimer = null;
+  }
+  if (rebuildAggTimer) {
+    clearTimeout(rebuildAggTimer);
+    rebuildAggTimer = null;
+  }
+  if (emoChart) {
+    try {
+      if (typeof emoChart.destroy === "function") emoChart.destroy();
+    } catch (e) {}
+    emoChart = null;
+  }
+  sysInfoCache = null;
 }
 
 onMounted(async () => {
-  rebuildAggIndex();
+  isUnmounted = false;
+  statsAborted = false;
+  if (activeTab.value === 2) {
+    rebuildAggIndex();
+  }
+});
+
+onUnmounted(() => {
+  isUnmounted = true;
+  statsAborted = true;
+  cleanupStats();
 });
 
 watch(
@@ -709,29 +785,29 @@ watch(
   }
 );
 
-watch(
-  () => data.value?.profiles,
-  () => {
-    rebuildAggIndex();
-  },
-  { deep: true }
-);
-
 // 监听tab切换，确保切换到统计tab时渲染图表
 watch(activeTab, async (newVal) => {
-  console.log("activeTab changed to:", newVal); // 调试日志
   if (newVal === 2) {
-    // 等待DOM更新后多次尝试渲染
+    // 切换到统计tab：重置状态，重建索引，再渲染图表
+    isUnmounted = false;
+    statsAborted = false;
+    sysInfoCache = null;
+    rebuildAggIndex();
     await nextTick();
-    setTimeout(() => {
+    // 使用跟踪的定时器
+    if (retryRenderTimer) clearTimeout(retryRenderTimer);
+    retryRenderTimer = setTimeout(() => {
+      retryRenderTimer = null;
       renderEmoChart();
-      setTimeout(() => renderEmoChart(), 200);
-      setTimeout(() => renderEmoChart(), 500);
-    }, 100);
+    }, 500);
+  } else {
+    // 离开统计tab，彻底中断所有计算和渲染
+    cleanupStats();
   }
 });
 
 function goBack() {
+  cleanupStats();
   uni.navigateBack();
 }
 
@@ -764,9 +840,6 @@ function toEmoDetail(id: number) {
 
 // 处理tab切换 - 兼容多种事件格式
 function handleTabChange(e: any) {
-  console.log("Tab change event:", JSON.stringify(e)); // 调试日志
-
-  // 尝试多种方式获取索引值
   let newIndex = 0;
 
   if (typeof e === "number") {
@@ -784,8 +857,6 @@ function handleTabChange(e: any) {
   } else if (e && typeof e.value !== "undefined") {
     newIndex = e.value;
   }
-
-  console.log("Parsed tab index:", newIndex); // 调试日志
 
   // 确保索引在有效范围内
   if (newIndex >= 0 && newIndex < tabs.length) {
@@ -820,6 +891,10 @@ function confirmCustomRange(e: any) {
 <style lang="less">
 .navbar-right {
   padding: 8px 12px;
+}
+
+.modal-form-lg {
+  padding: 0 30px;
 }
 
 .emo-list {
